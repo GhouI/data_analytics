@@ -4,16 +4,16 @@ import logging
 import pandas as pd
 import requests
 
-from config import Config
+from config import EXCHANGE_RATE_API_URL, FAKE_STORE_API_URL, RAW_DATA_DIRECTORY, Config
 
 
 def extract_products():
     """This function extracts products data from the Fake Store API."""
-    if not Config.FAKE_STORE_API_URL:
-        logging.info(Config.FAKE_STORE_API_URL)
+    if not FAKE_STORE_API_URL:
+        logging.info(FAKE_STORE_API_URL)
         raise ValueError("FAKE_STORE_API_URL is not set")
     try:
-        response = requests.get(Config.FAKE_STORE_API_URL + "/products")
+        response = requests.get(FAKE_STORE_API_URL + "/products")
         response.raise_for_status()
         data = response.json()
         logging.info("Data extracted successfully")
@@ -27,7 +27,7 @@ def save_raw_data(data):
     if not data:
         raise ValueError("No data to save")
 
-    file_path = Config.RAW_DATA_DIRECTORY / "products.json"
+    file_path = RAW_DATA_DIRECTORY / "products.json"
     if file_path.exists():
         logging.info(
             f"Raw data already exists at {file_path}. Please delete it before saving new data."
@@ -37,13 +37,28 @@ def save_raw_data(data):
         json.dump(data, file)
 
     logging.info(f"Raw data saved to {file_path}")
+    return file_path
+
+
+def save_processed_data(data):
+    file_path = Config.PROCESSED_DATA_DIRECTORY / "products.json"
+    if file_path.exists():
+        logging.info(
+            f"Processed data already exists at {file_path}. Please delete it before saving new data."
+        )
+        return
+    with open(file_path, "w") as file:
+        json.dump(data, file)
+
+    logging.info(f"Processed data saved to {file_path}")
+    return file_path
 
 
 def get_exchange_rate():
-    if not Config.EXCHANGE_RATE_API_URL:
+    if not EXCHANGE_RATE_API_URL:
         raise ValueError("Exchange rate API URL is not configured")
     try:
-        response = requests.get(Config.EXCHANGE_RATE_API_URL, timeout=10)
+        response = requests.get(EXCHANGE_RATE_API_URL, timeout=10)
         response.raise_for_status()
         data = response.json()
         euro_rates = data["rates"].get(Config.TARGET_CURRENCY)
@@ -57,17 +72,41 @@ def get_exchange_rate():
 
 
 def transform_data(data):
+    if not get_exchange_rate():
+        raise ValueError("Exchange rate not available")
+
     """Transform the raw data into a pandas DataFrame"""
     df = pd.DataFrame(data)
+
     # extract rating fields (average score and review count) into separate columns
     df["customer_rating"] = df["rating"].apply(lambda x: x["rate"])  # rating_mean
     df["customer_reviews"] = df["rating"].apply(lambda x: x["count"])  # rating_samples
-    df = df.drop(columns=["rating"], axis=1)
+    df = df.drop(columns=["rating"])
 
     # Renaming columns
-    df = df.rename(columns={"image": "image_url"})  # Being more specific
+    df = df.rename(
+        columns={"image": "image_url", "price": "price_usd"}
+    )  # Being more specific
+
+    df["price_eur"] = (df["price_usd"] * get_exchange_rate()).round(2)
+
+    # Price Categories via Vectors
+    df["price_category"] = pd.cut(
+        df["price_usd"],
+        bins=[0, Config.LOW_PRICE_THRESHOLD, Config.HIGH_PRICE_THRESHOLD, float("inf")],
+        labels=["low", "medium", "high"],
+    )
+    # Finding out if a product is highly recommended
+    df["product_highly_recommended"] = df["customer_rating"] >= Config.RATING_THRESHOLD
+
+    df["price_per_rating"] = (
+        df["price_usd"] / df["customer_rating"].replace(0, float("nan"))
+    ).round(2)
     return df
 
 
 data = extract_products()
 save_raw_data(data)
+transformed_data = transform_data(data)
+df = transformed_data.to_dict(orient="records")
+save_processed_data(df)
