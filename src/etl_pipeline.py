@@ -1,5 +1,7 @@
 import json
 import logging
+import sqlite3
+from datetime import datetime, timezone
 
 import pandas as pd
 import requests
@@ -36,39 +38,8 @@ def save_data(data, file_path):
     return file_path
 
 
-def save_raw_data(data):
-    """From the extracted data we save this to a file"""
-    if not data:
-        raise ValueError("No data to save")
-
-    file_path = RAW_DATA_DIRECTORY / "products.json"
-    if file_path.exists():
-        logging.info(
-            f"Raw data already exists at {file_path}. Please delete it before saving new data."
-        )
-        return
-    with open(file_path, "w") as file:
-        json.dump(data, file)
-
-    logging.info(f"Raw data saved to {file_path}")
-    return file_path
-
-
-def save_processed_data(data):
-    file_path = Config.PROCESSED_DATA_DIRECTORY / "products.json"
-    if file_path.exists():
-        logging.info(
-            f"Processed data already exists at {file_path}. Please delete it before saving new data."
-        )
-        return
-    with open(file_path, "w") as file:
-        json.dump(data, file)
-
-    logging.info(f"Processed data saved to {file_path}")
-    return file_path
-
-
 def get_exchange_rate():
+    # Fetch target currency rate
     if not EXCHANGE_RATE_API_URL:
         raise ValueError("Exchange rate API URL is not configured")
     try:
@@ -116,12 +87,110 @@ def transform_data(data):
     df["price_per_rating"] = (
         df["price_usd"] / df["customer_rating"].replace(0, float("nan"))
     ).round(2)
+
+    df["created_at"] = datetime.now(timezone.utc).isoformat()
     return df
 
 
-data = extract_products()
-save_data(data, RAW_DATA_DIRECTORY / "raw_products.json")
-transformed_data = transform_data(data)
-df = transformed_data.to_dict(orient="records")
-save_data(df, Config.PROCESSED_DATA_DIRECTORY / "processed_products.json")
-print(transformed_data.to_string())
+def create_db_schema():
+    """
+    Creates the database tables if they do not exist.
+    """
+    connection = sqlite3.connect(Config.DATABASE_PATH)
+    cursor = connection.cursor()
+    schema = Config.DATABASE_SCHEMA
+    with open(schema, "r") as f:
+        schema_sql = f.read()
+
+    cursor.executescript(schema_sql)
+    connection.commit()
+    connection.close()
+
+
+def load_to_database(df):
+    """Transforms the data into the SQL Database"""
+    # Run schema script
+    connection = sqlite3.connect(Config.DATABASE_PATH)
+    cursor = connection.cursor()
+    with open(Config.DATABASE_SCHEMA, "r") as f:
+        schema_sql = f.read()
+
+    cursor.executescript(schema_sql)
+    connection.commit()
+    connection.close()
+
+
+def load_data_to_database(df):
+    # Insert categories, products, and ratings
+    connection = sqlite3.connect(Config.DATABASE_PATH)
+    try:
+        existing = pd.read_sql("SELECT COUNT(*) as cnt FROM Products", connection)
+        if existing["cnt"].iloc[0] > 0:
+            print("Database already has data, skipping load.")
+            connection.close()
+            return
+
+        unique_categories = df["category"].unique()
+        cursor = connection.cursor()
+        for cat in unique_categories:
+            cursor.execute("INSERT INTO Categories (category_name) VALUES (?)", (cat,))
+        connection.commit()
+        categories_map = pd.read_sql(
+            "SELECT category_id, category_name FROM Categories", connection
+        )
+        df = df.merge(
+            categories_map, left_on="category", right_on="category_name", how="left"
+        )
+        for _, row in df.iterrows():
+            cursor.execute(
+                """INSERT INTO Products (id, title, price_usd, price_eur, description,
+                   category_id, image_url, price_category, price_per_rating, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    row["id"],
+                    row["title"],
+                    row["price_usd"],
+                    row["price_eur"],
+                    row["description"],
+                    row["category_id"],
+                    row["image_url"],
+                    str(row["price_category"]),
+                    row["price_per_rating"],
+                    row["created_at"],
+                ),
+            )
+            cursor.execute(
+                """INSERT INTO Ratings (product_id, customer_rating, customer_reviews,
+                   product_highly_recommended) VALUES (?, ?, ?, ?)""",
+                (
+                    row["id"],
+                    row["customer_rating"],
+                    row["customer_reviews"],
+                    bool(row["product_highly_recommended"]),
+                ),
+            )
+        connection.commit()
+        print("data loaded successfully")
+
+    except Exception as e:
+        connection.rollback()
+        print(f"Error loading categories: {e}")
+
+
+def get_first_product():
+    # Get first product row
+    connection = sqlite3.connect(Config.DATABASE_PATH)
+    row = pd.read_sql("SELECT * FROM Products LIMIT 1", connection)
+    connection.close()
+    return row
+
+
+if __name__ == "__main__":
+    data = extract_products()
+    save_data(data, RAW_DATA_DIRECTORY / "raw_products.json")
+    transformed_data = transform_data(data)
+    df = transformed_data.to_dict(orient="records")
+    save_data(df, Config.PROCESSED_DATA_DIRECTORY / "processed_products.json")
+    create_db_schema()
+    load_data_to_database(transformed_data)
+    print(get_first_product())
