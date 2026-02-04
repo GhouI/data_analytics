@@ -22,6 +22,20 @@ def extract_products():
         raise ValueError(f"Failed to fetch data from API: {e}")
 
 
+def save_data(data, file_path):
+    """Saving the data to a directory."""
+    if not data or not file_path:
+        raise ValueError("Invalid data or file path. Please make sure to provide")
+    if file_path.exists():
+        logging.info(
+            f"Data already exists at {file_path}. Please delete it before saving new data."
+        )
+    with open(file_path, "w") as file:
+        json.dump(data, file)
+    logging.info(f"Data saved to {file_path}")
+    return file_path
+
+
 def save_raw_data(data):
     """From the extracted data we save this to a file"""
     if not data:
@@ -106,7 +120,8 @@ def transform_data(data):
 
 
 data = extract_products()
-save_raw_data(data)
+save_data(data, RAW_DATA_DIRECTORY / "raw_products.json")
 transformed_data = transform_data(data)
 df = transformed_data.to_dict(orient="records")
-save_processed_data(df)
+save_data(df, Config.PROCESSED_DATA_DIRECTORY / "processed_products.json")
+print(transformed_data.to_string())
