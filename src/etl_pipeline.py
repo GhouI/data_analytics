@@ -35,7 +35,25 @@ def save_raw_data(data):
         return
     with open(file_path, "w") as file:
         json.dump(data, file)
+
     logging.info(f"Raw data saved to {file_path}")
+
+
+def get_exchange_rate():
+    if not Config.EXCHANGE_RATE_API_URL:
+        raise ValueError("Exchange rate API URL is not configured")
+    try:
+        response = requests.get(Config.EXCHANGE_RATE_API_URL, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        euro_rates = data["rates"].get(Config.TARGET_CURRENCY)
+        if not euro_rates:
+            raise ValueError(
+                f"Target currency {Config.TARGET_CURRENCY} not found in response"
+            )
+        return euro_rates
+    except requests.exceptions.RequestException as e:
+        raise ValueError(f"Failed to fetch exchange rate: {e}")
 
 
 def transform_data(data):
@@ -48,7 +66,6 @@ def transform_data(data):
 
     # Renaming columns
     df = df.rename(columns={"image": "image_url"})  # Being more specific
-
     return df
 
 
