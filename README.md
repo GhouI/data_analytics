@@ -15,7 +15,7 @@ Settings are defined in `config.py`. The following can be overridden with enviro
 | Variable | Default | Description |
 |---|---|---|
 | `FAKE_STORE_API_URL` | `https://fakestoreapi.com` | Product data source |
-| `EXCHANGE_RATE_API_URL` | `https://api.exchangerate-api.com/v4/latest/USD` | Exchange rate provider |
+| `EXCHANGE_RATE_API_URL` | `https://api.exchangerate-api.com/v4/latest/AUD` | Exchange rate provider |
 | `DATABASE_NAME` | `products.db` | SQLite database filename |
 
 ### Thresholds
