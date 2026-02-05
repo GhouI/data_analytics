@@ -5,7 +5,7 @@ ETL pipeline that extracts product data from the Fake Store API, transforms it w
 ## Pipeline Stages
 
 1. **Extract** — Fetches product data from the [Fake Store API](https://fakestoreapi.com) and saves raw JSON locally.
-2. **Transform** — Converts prices from USD to GBP, categorizes products by price tier (low/medium/high), and flags highly rated items.
+2. **Transform** — Converts prices from USD to EUR, categorizes products by price tier (low/medium/high), and flags highly rated items.
 3. **Load** — Writes the transformed data into a SQLite database.
 
 ## Configuration
@@ -22,22 +22,35 @@ Settings are defined in `config.py`. The following can be overridden with enviro
 
 | Setting | Value |
 |---|---|
-| Low price | < $20 |
+| Low price | < $5 |
 | High price | > $100 |
-| Highly rated | >= 4.0 stars |
+| Highly rated | >= 4.5 stars |
 
 ## Project Structure
 
 ```
 data_analytics/
-├── config.py
-├── data/
-│   ├── raw/          # Timestamped raw JSON extracts
-│   └── database/     # SQLite database
+├── main.py              # Entry point
+├── requirements.txt
+├── src/
+│   ├── config.py
+│   ├── etl_pipeline.py
+│   └── data/
+│       ├── raw/         # Raw JSON extracts
+│       ├── processed/   # Processed JSON
+│       └── database/    # SQLite database and schema
 └── README.md
 ```
 
 ## Usage
+
+### Docker (recommended)
+
+```bash
+docker compose up --build
+```
+
+### Local
 
 ```bash
 pip install -r requirements.txt

@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS Categories(
 CREATE TABLE IF NOT EXISTS Products (
     id INTEGER PRIMARY KEY,
     title TEXT NOT NULL,
-    price_aud REAL NOT NULL,
+    price_usd REAL NOT NULL,
     price_eur REAL NOT NULL,
     description TEXT,
     category_id INTEGER,
@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS Products (
 CREATE TABLE IF NOT EXISTS Ratings (
     product_id INTEGER PRIMARY KEY,
     customer_rating REAL NOT NULL,
-    customer_reviews_count INTEGER NOT NULL,
+    customer_reviews INTEGER NOT NULL,
     product_highly_recommended BOOLEAN NOT NULL,
     confidence_score REAL,
     FOREIGN KEY (product_id) REFERENCES products(id)

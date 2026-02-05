@@ -2,14 +2,31 @@ import json
 import logging
 import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
+from typing import TypedDict
 
 import pandas as pd
 import requests
 
-from config import EXCHANGE_RATE_API_URL, FAKE_STORE_API_URL, RAW_DATA_DIRECTORY, Config
+from config import EXCHANGE_RATE_API_URL, FAKE_STORE_API_URL, Config
 
 
-def extract_products():
+class Rating(TypedDict):
+    rate: float
+    count: int
+
+
+class Product(TypedDict):
+    id: int
+    title: str
+    price: float
+    description: str
+    category: str
+    image: str
+    rating: Rating
+
+
+def extract_products() -> list[Product]:
     """This function extracts products data from the Fake Store API."""
     if not FAKE_STORE_API_URL:
         logging.info(FAKE_STORE_API_URL)
@@ -24,7 +41,7 @@ def extract_products():
         raise ValueError(f"Failed to fetch data from API: {e}")
 
 
-def save_data(data, file_path):
+def save_data(data: list[Product], file_path: Path) -> Path:
     """Saving the data to a directory."""
     if not data or not file_path:
         raise ValueError("Invalid data or file path. Please make sure to provide")
@@ -38,7 +55,7 @@ def save_data(data, file_path):
     return file_path
 
 
-def get_exchange_rate():
+def get_exchange_rate() -> float:
     # Fetch target currency rate
     if not EXCHANGE_RATE_API_URL:
         raise ValueError("Exchange rate API URL is not configured")
@@ -56,11 +73,12 @@ def get_exchange_rate():
         raise ValueError(f"Failed to fetch exchange rate: {e}")
 
 
-def transform_data(data):
-    if not get_exchange_rate():
+def transform_data(data: list[Product]) -> pd.DataFrame:
+    """Transform the raw data into a pandas DataFrame"""
+    exchange_rate = get_exchange_rate()
+    if not exchange_rate:
         raise ValueError("Exchange rate not available")
 
-    """Transform the raw data into a pandas DataFrame"""
     df = pd.DataFrame(data)
 
     # extract rating fields (average score and review count) into separate columns
@@ -73,7 +91,7 @@ def transform_data(data):
         columns={"image": "image_url", "price": "price_usd"}
     )  # Being more specific
 
-    df["price_eur"] = (df["price_usd"] * get_exchange_rate()).round(2)
+    df["price_eur"] = (df["price_usd"] * exchange_rate).round(2)
 
     # Price Categories via Vectors
     df["price_category"] = pd.cut(
@@ -92,7 +110,7 @@ def transform_data(data):
     return df
 
 
-def create_db_schema():
+def create_db_schema() -> None:
     """
     Creates the database tables if they do not exist.
     """
@@ -107,20 +125,7 @@ def create_db_schema():
     connection.close()
 
 
-def load_to_database(df):
-    """Transforms the data into the SQL Database"""
-    # Run schema script
-    connection = sqlite3.connect(Config.DATABASE_PATH)
-    cursor = connection.cursor()
-    with open(Config.DATABASE_SCHEMA, "r") as f:
-        schema_sql = f.read()
-
-    cursor.executescript(schema_sql)
-    connection.commit()
-    connection.close()
-
-
-def load_data_to_database(df):
+def load_data_to_database(df: pd.DataFrame) -> None:
     # Insert categories, products, and ratings
     connection = sqlite3.connect(Config.DATABASE_PATH)
     try:
@@ -177,20 +182,9 @@ def load_data_to_database(df):
         print(f"Error loading categories: {e}")
 
 
-def get_first_product():
+def get_first_product() -> pd.DataFrame:
     # Get first product row
     connection = sqlite3.connect(Config.DATABASE_PATH)
     row = pd.read_sql("SELECT * FROM Products LIMIT 1", connection)
     connection.close()
     return row
-
-
-if __name__ == "__main__":
-    data = extract_products()
-    save_data(data, RAW_DATA_DIRECTORY / "raw_products.json")
-    transformed_data = transform_data(data)
-    df = transformed_data.to_dict(orient="records")
-    save_data(df, Config.PROCESSED_DATA_DIRECTORY / "processed_products.json")
-    create_db_schema()
-    load_data_to_database(transformed_data)
-    print(get_first_product())
