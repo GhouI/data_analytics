@@ -1,11 +1,5 @@
-import sys
-from pathlib import Path
-
-# Add src directory to Python path so imports resolve correctly
-sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
-
-from config import RAW_DATA_DIRECTORY, Config
-from etl_pipeline import (
+from src.config import RAW_DATA_DIRECTORY, Config
+from src.etl_pipeline import (
     create_db_schema,
     extract_products,
     get_first_product,

@@ -3,12 +3,12 @@ import logging
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict
 
 import pandas as pd
 import requests
 
-from config import EXCHANGE_RATE_API_URL, FAKE_STORE_API_URL, Config
+from .config import EXCHANGE_RATE_API_URL, FAKE_STORE_API_URL, Config
 
 
 class Rating(TypedDict):
@@ -41,7 +41,7 @@ def extract_products() -> list[Product]:
         raise ValueError(f"Failed to fetch data from API: {e}")
 
 
-def save_data(data: list[Product], file_path: Path) -> Path:
+def save_data(data: list[Product] | list[dict[str, Any]], file_path: Path) -> Path:
     """Saving the data to a directory."""
     if not data or not file_path:
         raise ValueError("Invalid data or file path. Please make sure to provide")
